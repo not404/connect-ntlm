@@ -1,0 +1,4 @@
+Host *
+  ProxyCommand connect-ntlm -H mydomain/laulee@proxy.mydomain.org:8080 %h %p
+  ServerAliveInterval 10
+  Port 563
