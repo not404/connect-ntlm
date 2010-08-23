@@ -4,6 +4,9 @@
  * Copyright (c) 2000-2006 Shun-ichi Goto
  * Copyright (c) 2002, J. Grant (English Corrections)
  *
+ * NTLM Authentication Enhancements
+ * Copyright (C) 2003-2010, Laurence A. Lee (rubyjedi at github)
+ *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation; either version 2
@@ -66,7 +69,7 @@
  *   command line option.
  *
  *   usage:  connect [-dnhst45] [-R resolve] [-p local-port] [-w sec]
- *                   [-H [user@]proxy-server[:port]]
+ *                   [-H [[ntlm-domain/]user@]proxy-server[:port]]
  *                   [-S [user@]socks-server[:port]]
  *                   [-T proxy-server[:port]]
  *                   [-c telnet proxy command]
@@ -214,6 +217,8 @@
 #include <fcntl.h>
 #include <signal.h>
 
+#include "ne_ntlm.h"
+
 #ifdef __CYGWIN32__
 #undef _WIN32
 #endif
@@ -282,14 +287,18 @@ static char *usage = "usage: %s [-dnhst45] [-p local-port]"
 /* help message for UNIX */
 "[-R resolve] [-w timeout] \n"
 #endif /* not _WIN32 */
-"          [-H proxy-server[:port]] [-S [user@]socks-server[:port]] \n"
+"          [-H [[ntlm-domain/]user@]proxy-server[:port]] [-S [user@]socks-server[:port]] \n"
 "          [-T proxy-server[:port]]\n"
 "          [-c telnet-proxy-command]\n"
 "          host port\n";
 
+/* NTLM Authentication Enhancement: NTLM Negotiation Vars */
+struct connectdata gConnectData;
+char* sBogusPass = "BogusPass"; /* Fake "password" to coerce ntlm module into processing an NTLM Type1 message. */
+
 /* name of this program */
 char *progname = NULL;
-char *progdesc = "connect --- simple relaying command via proxy.";
+char *progdesc = "connect --- simple relaying command via proxy (NTLM Enhanced).";
 char *rcs_revstr = "$Revision: 1.1 $";
 char *revstr = NULL;
 int major_version = 1;
@@ -438,6 +447,7 @@ char *socks5_auth = NULL;
 #define PROXY_AUTH_NONE 0
 #define PROXY_AUTH_BASIC 1
 #define PROXY_AUTH_DIGEST 2
+#define PROXY_AUTH_NTLM 3   /* NTLM Authentication Enhancement */
 int proxy_auth_type = PROXY_AUTH_NONE;
 
 /* reason of end repeating */
@@ -2398,6 +2408,62 @@ basic_auth (SOCKET s)
     return ret;
 }
 
+/* NTLM Authentication Enhancement */
+int
+ntlm_auth( SOCKET s)
+{
+  int ret = 0;
+  NENTLM_CODE NTHandshakeStatus;
+
+    const char *user = relay_user;
+    char *pass = NULL;
+
+  /* Get username/password for authentication */
+    if (user == NULL)
+        fatal("Cannot decide username for proxy authentication.");
+
+  /* NTLM Guard: If this is the initial handshake, use the Bogus Password, not User-Supplied Password */
+    if ((proxy_auth_type != PROXY_AUTH_NTLM) || (gConnectData.proxyntlm.state != NTLMSTATE_NONE)) {
+      if ((pass = determine_relay_password ()) == NULL &&
+        (pass = readpass("Enter proxy authentication password for %s@%s: ",
+                         relay_user, relay_host)) == NULL)
+        fatal("Cannot decide password for proxy authentication.");
+    } else {
+      debug("NTLM Handshake: Using a Bogus Password to initialize NTLM Type1 message (this is normal).\n");
+      pass = strdup(sBogusPass);
+    }
+
+  /* Initialize the relevant properties in the connectdata structure - copy user/pass pointers */
+    gConnectData.proxypasswd = pass;
+    gConnectData.proxyuser = user;
+
+  /* Invoke NTLM Routine to process the NTLM Handshake */
+    NTHandshakeStatus = ne_output_ntlm(&gConnectData, 1);
+
+  /* Transmit the NTLM Handshake if Valid */
+    if (NTHandshakeStatus == NENTLME_OK) {
+      debug("ntlm_auth:  Computed NTLM Handshake = [%s]\n",gConnectData.allocptr.proxyuserpwd);
+      if (gConnectData.allocptr.proxyuserpwd) {
+        ret = sendf(s, gConnectData.allocptr.proxyuserpwd);
+      } else {
+        debug("ntlm_auth:  Unable to send NTLM Authentication Handshake String.\n");
+      }
+    } else {
+      debug("ntlm_auth:  General Failure while creating NTLM Authentication Handshake.\n");
+    } 
+
+  /* Cleanse the Properties in the Structure (let our caller free() the real values) */
+  /* Allow ntlm module to do a safefree() on gConnectData.allocptr.proxyuserpwd */
+    gConnectData.proxypasswd = NULL;
+    gConnectData.proxyuser = NULL;
+    memset (pass, 0, strlen(pass)); /* Password no longer needed - Clobber the Password from RAM */
+
+    //ne_safefree(conn->allocptr.proxyuserpwd);
+    //conn->allocptr.proxyuserpwd = NULL;
+
+  return ret;
+}
+
 /* begin relaying via HTTP proxy
    Directs CONNECT method to proxy server to connect to
    destination host (and port). It may not be allowed on your
@@ -2407,6 +2473,7 @@ int
 begin_http_relay( SOCKET s )
 {
     char buf[1024];
+    char buf2[1024]; /* NTLM Enhancement needs the entire line-buffer, so we copy it before it gets tokenized. */
     int result;
     char *auth_what;
 
@@ -2415,6 +2482,8 @@ begin_http_relay( SOCKET s )
     if (sendf(s,"CONNECT %s:%d HTTP/1.0\r\n", dest_host, dest_port) < 0)
         return START_ERROR;
     if (proxy_auth_type == PROXY_AUTH_BASIC && basic_auth (s) < 0)
+        return START_ERROR;
+    if (proxy_auth_type == PROXY_AUTH_NTLM && ntlm_auth (s) < 0)
         return START_ERROR;
     if (sendf(s,"\r\n") < 0)
         return START_ERROR;
@@ -2448,6 +2517,9 @@ begin_http_relay( SOCKET s )
                 relay_port = atoi(cut_token(buf, ":"));
             }
         } while (strcmp(buf,"\r\n") != 0);
+        /* NTLM Enhancement: Reset Handshake to INITIAL State, then Retry Handshake */
+        proxy_auth_type = PROXY_AUTH_NTLM;
+        gConnectData.proxyntlm.state = NTLMSTATE_NONE;
         return START_RETRY;
 
     /* We handle both 401 and 407 codes here: 401 is WWW-Authenticate, which
@@ -2459,7 +2531,7 @@ begin_http_relay( SOCKET s )
             and ignore realm. */
         /* If proxy_auth_type is PROXY_AUTH_BASIC and get
          this result code, authentication was failed. */
-        if (proxy_auth_type != PROXY_AUTH_NONE) {
+        if (proxy_auth_type == PROXY_AUTH_BASIC) {
             error("Authentication failed.\n");
             return START_ERROR;
         }
@@ -2468,6 +2540,10 @@ begin_http_relay( SOCKET s )
             if ( line_input(s, buf, sizeof(buf)) ) {
                 break;
             }
+            /* NTLM Enhancement: Preserve the raw (untokenized) buffer for NTLM Authentication */
+            memset(buf2,0,sizeof(buf2));
+            strncpy(buf2,buf,strlen(buf)-2); /* Copy everything excluding final cr/lf */
+
             downcase(buf);
             if (expect(buf, auth_what)) {
                 /* parse type and realm */
@@ -2479,6 +2555,14 @@ begin_http_relay( SOCKET s )
                     return START_ERROR;         /* fail */
                 }
                 /* check supported auth type */
+                if (expect(scheme, "ntlm")) {
+                    proxy_auth_type = PROXY_AUTH_NTLM;
+                    /* Allow NTLM to process incoming NTLM Header (Everything after *-Authenticate: stuff) */
+                    if (ne_input_ntlm(&gConnectData,1,buf2+strlen(auth_what)+1) == NENTLM_BAD) {
+                        debug("Failed NTLM Authentication [%s]",buf2);
+                        return START_ERROR;
+                    }
+                } else
                 if (expect(scheme, "basic")) {
                     proxy_auth_type = PROXY_AUTH_BASIC;
                 } else {
@@ -2880,6 +2964,12 @@ main( int argc, char **argv )
     }
 
 retry:
+  /* NTLM: DO NOT OPEN a new connection if performing an NTLM Handshake */
+  if ((proxy_auth_type == PROXY_AUTH_NTLM) && (gConnectData.proxyntlm.state == NTLMSTATE_TYPE2)) {
+    debug("Recycling Socket for NTLM Authentication.\n");
+  } else {
+      debug("Creating a new Socket Connection.\n");
+      if (proxy_auth_type == PROXY_AUTH_NTLM) { gConnectData.proxyntlm.state = NTLMSTATE_NONE; }
 #ifndef _WIN32
     if (0 < connect_timeout)
         set_timeout (connect_timeout);
@@ -2899,7 +2989,7 @@ retry:
             fatal( "Unable to connect to relay host, errno=%d\n",
                    socket_errno());
     }
-
+  } /* NTLM: End of if-else guard */
     /** resolve destination host (SOCKS) **/
 #if !defined(_WIN32) && !defined(__CYGWIN32__)
     if (socks_ns.sin_addr.s_addr != 0)
@@ -2929,7 +3019,7 @@ retry:
             break;
         case START_RETRY:
             /* retry with authentication */
-            close (remote);
+            // close (remote);
             goto retry;
         }
         break;
