@@ -1,0 +1,39 @@
+Installation Notes
+------------------
+
+Compiling
+---------
+
+If you are not compiling the static binary, you will need the OpenSSH Development Libraries for your machine (openssh-devel for Fedora).
+
+Available Makefile Targets:
+---------------------------
+
+  * make static
+  * make dynamic
+  * make dynamic-full <— Activates experimental “Type 3” NTLM Response Support in ne_ntlm module; Untested.
+
+Installing
+----------
+
+Copy the resulting connect-ntlm binary to a convenient directory in your machine’s PATH, such as /usr/local/bin.
+
+Copy the “config-example” file to ~/.ssh, and rename it to “config”.
+
+Edit the file to meet your environment.
+
+To make sure things are communicating properly, add the “-d” parameter to the connect-ntlm command line to display the debug/diagnostic messages. Be sure to remove the “-d” when you’re done testing/diagnosing.
+
+Usage And Additional Notes
+--------------------------
+
+The example configuration uses port 563, the NNTPS port. This is one of the two “default” ports that most proxy servers allow outgoing HTTP CONNECT sessions for. If you’re not using an SSL-enabled HTTP Server, I recommend running your SSH Daemon on port 443 (HTTPS) and changing the config file as appropriate. Port 443 traffic blends in better with normal traffic patterns, so you’ll draw less attention to yourself.
+
+The example configuration also specifies a Keep-Alive, which is necessary to convince the proxy server to keep the session active. Without it, your SSH connection will quickly time out.
+
+After all is ready, it should just be a simple matter of running ssh as usual, specifying one of the allowable Outgoing Ports:
+
+  * ssh -l myusername myserver.targetdomain.com -p 443
+  * ssh -l myusername myserver.targetdomain.com -p 563
+
+Refer to the connect.c source code comments for more installation and configuration tips, if you’re doing something very unusual.
