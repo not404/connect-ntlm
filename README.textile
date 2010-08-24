@@ -1,0 +1,28 @@
+h1. connect-ntlm: 
+
+*connect-ntlm* is a Tool that enables SSH to be used from Behind Microsoft Proxy Servers.
+
+h2. History and Credits
+
+The SSH-NTLM Tunnel Creator is an enhanced version of *connect.c*, written by Shun-Ichi Goto.  NTLM Authentication support has been added, which is what allows SSH to work with Microsoft Proxy Server. The NTLM routines (*ne_ntlm*) were originally written by Daniel Stenberg (of Curl and libCurl fame), and donated under the GPL to the Neon Project. The DES Encryption routines were extracted from GnuPG (gnupg-1.4.1), which allows this tool to be compiled without requiring OpenSSL Development Libraries to be installed. The *base64* implementation is a quick and dirty implementation I whipped up to fill the need.
+
+I have combined all of the above relatively standalone pieces into one of the most useful tools for any Linux, FOS, or SSH enthusiast who's working behind a Microsoft Proxy Server.
+
+h2. Why I Created This Tool
+
+This tool was created for two reasons. First, I needed to connect to external machines, preferably with SSH. As you're probably aware, this is darn near impossible behind a Microsoft Proxy Server like ISA 2006, unless you've got special Access Rules added by a cooperative Network Administrator.
+
+The other reason why I created this tool is because I'm always pressed to deliver results quickly, and "waiting on someone else" is never a good excuse when I'm on the clock. Corporate Red-Tape and wrestling Uncooperative Network Administrators is a waste of energy when all you're trying to do is *rsync* a remote repository, or *ssh* out to manage a server beyond your corporate walls.
+
+Fortunately, there is a solution, and that is to use a little-known secret in Microsoft Proxy Server configurations: If your Domain Account has Authenticated Access to the Web, chances are very good that the Proxy Server will allow outgoing connections to Secure HTTP (Port 443), and Secure News (Port 563) *if you can do the NTLM Authentication Handshake*
+
+h2. Benefits of this Tool
+
+* No need to consult with a Network Administrator
+* Outgoing Connections are *Authenticated* with a Real Domain Account
+* Connections blend in with Normal Traffic
+* Full SSH Functionality is Available - ssh, scp, rsync, port-forwarding, etc.
+
+h2. Alternative (Unrecommended) Ways to Use SSH with This Tool
+
+SSH has a *Port Forwarding* function that allows a local machine's port to represent a service running on an externally connected machine (presumably outside the Proxy Server). By using the Port Forwarding capability to forward to an external proxy server, you can bypass your internal firewall, and any content restrictions enforced by it. Now you have a way to access blocked sites like Web-Based Email, Facebook, and Twitter.
