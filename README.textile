@@ -1,10 +1,12 @@
 h1. connect-ntlm: 
 
-*connect-ntlm* is a Tool that enables SSH to be used from Behind Microsoft Proxy Servers.
+*connect-ntlm* is a Tool that enables SSH to be used from Behind Microsoft Proxy Servers. It is a source code refresh of what I once called the *SSH-NTLM Tunnel Creator* at "not404.com":http://www.not404.com , circa 2003-2008.
 
 h2. History and Credits
 
-The SSH-NTLM Tunnel Creator is an enhanced version of *connect.c*, written by Shun-Ichi Goto.  NTLM Authentication support has been added, which is what allows SSH to work with Microsoft Proxy Server. The NTLM routines (*ne_ntlm*) were originally written by Daniel Stenberg (of Curl and libCurl fame), and donated under the GPL to the Neon Project. The DES Encryption routines were extracted from GnuPG (gnupg-1.4.1), which allows this tool to be compiled without requiring OpenSSL Development Libraries to be installed. The *base64* implementation is a quick and dirty implementation I whipped up to fill the need.
+*connect-ntlm* is an enhanced version of *connect.c*, written by Shun-Ichi Goto.
+
+NTLM Authentication support has been added, which is what allows SSH to work with Microsoft Proxy Server. The NTLM routines (*ne_ntlm*) were originally written by Daniel Stenberg (of Curl and libCurl fame), and donated under the GPL to the Neon Project. The DES Encryption routines were extracted from GnuPG (gnupg-1.4.1), which allows this tool to be compiled without requiring OpenSSL Development Libraries to be installed. The *base64* implementation is a quick and dirty implementation I whipped up to fill the need.
 
 I have combined all of the above relatively standalone pieces into one of the most useful tools for any Linux, FOS, or SSH enthusiast who's working behind a Microsoft Proxy Server.
 
